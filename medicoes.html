@@ -1,0 +1,149 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitoramento da Lixeira Inteligente</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 { margin-bottom: 8px; }
+    .subtitulo { color: #94a3b8; margin-bottom: 28px; }
+
+    .grade {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .cartao {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 22px;
+    }
+
+    .rotulo { color: #94a3b8; font-size: 14px; }
+    .valor { font-size: 30px; font-weight: bold; margin-top: 12px; }
+    .unidade { font-size: 16px; color: #94a3b8; }
+    #status { margin-top: 24px; color: #94a3b8; }
+    footer { color: #64748b; font-size: 13px; margin-top: 28px; }
+
+    @media (max-width: 480px) {
+      body { padding: 16px; }
+      .valor { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🗑️ Lixeira Inteligente</h1>
+  <p class="subtitulo">Painel público de acompanhamento</p>
+
+  <section class="grade">
+    <article class="cartao">
+      <div class="rotulo">Distância do sensor</div>
+      <div class="valor"><span id="distancia">--</span> <span class="unidade">cm</span></div>
+    </article>
+
+    <article class="cartao">
+      <div class="rotulo">Ocupação estimada</div>
+      <div class="valor"><span id="ocupacao">--</span><span class="unidade">%</span></div>
+    </article>
+
+    <article class="cartao">
+      <div class="rotulo">Nível da lixeira</div>
+      <div class="valor" id="nivel">Aguardando</div>
+    </article>
+
+    <article class="cartao">
+      <div class="rotulo">Última atualização</div>
+      <div class="valor" style="font-size:18px" id="atualizado">--</div>
+    </article>
+  </section>
+
+  <p id="status">Conectando ao painel...</p>
+  <footer>Dados de monitoramento • Atualização automática a cada 5 segundos</footer>
+</main>
+
+<script>
+  // Configuração pública do Supabase: não coloque a chave secreta aqui.
+  const SUPABASE_URL = "https://urxhzeszzgrarufazsfg.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_FTX8miiUXKzUwL3o5jX06A_TZbSIzI7";
+
+  async function atualizar() {
+    const status = document.getElementById("status");
+
+    try {
+      const resposta = await fetch(
+        `${SUPABASE_URL}/rest/v1/medicao_atual?select=id,distancia_cm,ocupacao_pct,nivel,atualizado_em&order=atualizado_em.desc&limit=1`,
+        {
+          headers: {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          cache: "no-store"
+        }
+      );
+
+      if (!resposta.ok) {
+        throw new Error(`Erro HTTP ${resposta.status}`);
+      }
+
+      const dados = await resposta.json();
+
+      if (!dados.length) {
+        status.textContent = "Ainda não há medições disponíveis.";
+        return;
+      }
+
+      const m = dados[0];
+
+      document.getElementById("distancia").textContent =
+        m.distancia_cm ?? "--";
+
+      document.getElementById("ocupacao").textContent =
+        m.ocupacao_pct ?? "--";
+
+      const nomes = {
+        vazia: "Vazia",
+        intermediaria: "Intermediária",
+        cheia: "Cheia",
+        erro: "Erro no sensor"
+      };
+
+      document.getElementById("nivel").textContent =
+        nomes[m.nivel] || m.nivel || "Desconhecido";
+
+      document.getElementById("atualizado").textContent =
+        m.atualizado_em
+          ? new Date(m.atualizado_em).toLocaleString("pt-BR")
+          : "Indisponível";
+
+      status.textContent = "Conectado • Dados atualizados";
+    } catch (erro) {
+      status.textContent =
+        "Não foi possível carregar os dados. Verifique a conexão.";
+      console.error(erro);
+    }
+  }
+
+  atualizar();
+  setInterval(atualizar, 5000);
+</script>
+</body>
+</html>
