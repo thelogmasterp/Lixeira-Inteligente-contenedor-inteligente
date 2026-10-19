@@ -1,28 +1,497 @@
 
-void publicarDados() {
-  char payload[220];
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Máscara Inteligente | Painel ao vivo</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 
-  snprintf(
-    payload,
-    sizeof(payload),
-    "{\"id\":\"%s\",\"distancia_cm\":%ld,\"ocupacao_pct\":0,\"nivel\":\"%s\",\"wifi_rssi\":%d,\"uptime_s\":%lu}",
-    clientId.c_str(),
-    ultimaDistancia,
-    ultimaDistancia < 0 ? "erro" :
-      ultimaDistancia < 7 ? "alerta" :
-      ultimaDistancia < 15 ? "vermelho" :
-      ultimaDistancia < 30 ? "laranja" : "azul",
-    WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
-    millis() / 1000
-  );
+<style>
+:root {
+  --fundo: #08111f;
+  --painel: #111e30;
+  --borda: #263750;
+  --texto: #f1f5f9;
+  --suave: #9aacc4;
+  --azul: #38bdf8;
+  --verde: #34d399;
+  --vermelho: #fb7185;
+  --laranja: #fbbf24;
+}
 
-  Serial.println(payload);
+* { box-sizing: border-box; }
 
-  if (mqtt.connected()) {
-    if (!mqtt.publish(topicoDados.c_str(), payload)) {
-      Serial.println("Falha ao publicar dados MQTT");
-    }
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 24px;
+  color: var(--texto);
+  font-family: Arial, sans-serif;
+  background:
+    radial-gradient(ellipse at top, #172d49 0%, var(--fundo) 60%);
+}
+
+main { max-width: 1050px; margin: auto; }
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 17px;
+  font-size: 28px;
+  background: #17314b;
+  border: 1px solid #2b5273;
+}
+
+h1 { margin: 0 0 7px; font-size: clamp(23px, 4vw, 32px); }
+.sub { color: var(--suave); font-size: 14px; }
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 15px;
+  border-radius: 30px;
+  background: #1a293d;
+  border: 1px solid var(--borda);
+  font-size: 13px;
+}
+
+.ponto {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--laranja);
+}
+
+.status.online .ponto {
+  background: var(--verde);
+  box-shadow: 0 0 12px var(--verde);
+}
+
+.status.erro .ponto { background: var(--vermelho); }
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.card {
+  background: linear-gradient(145deg, #14243a, #0e1a2b);
+  border: 1px solid var(--borda);
+  border-radius: 22px;
+  padding: 24px;
+  box-shadow: 0 12px 32px #00000020;
+}
+
+.rotulo {
+  color: var(--suave);
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.distancia {
+  margin: 18px 0 8px;
+  font-size: clamp(52px, 9vw, 82px);
+  font-weight: 800;
+  letter-spacing: -3px;
+}
+
+.distancia small {
+  font-size: 22px;
+  color: var(--suave);
+  letter-spacing: 0;
+}
+
+.descricao { color: var(--suave); font-size: 14px; }
+
+.faixa {
+  height: 9px;
+  display: flex;
+  gap: 4px;
+  margin-top: 25px;
+}
+
+.faixa span {
+  flex: 1;
+  border-radius: 10px;
+  background: #334155;
+}
+
+.faixa .f-vermelho { background: var(--vermelho); }
+.faixa .f-laranja { background: var(--laranja); }
+.faixa .f-azul { background: var(--azul); }
+
+.faixa-legendas {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 9px;
+  color: var(--suave);
+  font-size: 11px;
+}
+
+.zona {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 245px;
+}
+
+.circulo {
+  display: grid;
+  place-items: center;
+  width: 105px;
+  height: 105px;
+  border-radius: 50%;
+  margin: 22px 0;
+  background: #17283e;
+  border: 2px solid #42546c;
+  font-size: 36px;
+}
+
+.circulo.vermelho {
+  color: var(--vermelho);
+  border-color: var(--vermelho);
+  background: #4b1d30;
+  box-shadow: 0 0 35px #fb718520;
+}
+
+.circulo.laranja {
+  color: var(--laranja);
+  border-color: var(--laranja);
+  background: #493719;
+  box-shadow: 0 0 35px #fbbf2420;
+}
+
+.circulo.azul {
+  color: var(--azul);
+  border-color: var(--azul);
+  background: #12354b;
+  box-shadow: 0 0 35px #38bdf820;
+}
+
+.circulo.alerta {
+  animation: piscar .5s infinite alternate;
+}
+
+@keyframes piscar {
+  from { opacity: 1; }
+  to { opacity: .3; }
+}
+
+.zona h2 { margin: 0 0 8px; font-size: 23px; }
+.zona p { margin: 0; color: var(--suave); line-height: 1.5; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.metrica { min-height: 130px; }
+
+.valor {
+  font-size: 27px;
+  font-weight: 700;
+  margin-top: 17px;
+  overflow-wrap: anywhere;
+}
+
+.unidade {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--suave);
+}
+
+.leds {
+  display: flex;
+  gap: 13px;
+  margin-top: 22px;
+}
+
+.led {
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: #334155;
+  border: 2px solid #53647b;
+}
+
+.led.aceso {
+  border-color: transparent;
+  box-shadow: 0 0 15px currentColor;
+}
+
+.led.r { color: var(--vermelho); background: var(--vermelho); }
+.led.o { color: var(--laranja); background: var(--laranja); }
+.led.b { color: var(--azul); background: var(--azul); }
+
+footer {
+  text-align: center;
+  color: var(--suave);
+  font-size: 12px;
+  padding: 25px 0 8px;
+  line-height: 1.8;
+}
+
+@media (max-width: 700px) {
+  body { padding: 15px; }
+  .hero { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card { padding: 18px; border-radius: 17px; }
+  .status { font-size: 12px; }
+}
+
+@media (max-width: 380px) {
+  .grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+
+<body>
+<main>
+  <header>
+    <div class="marca">
+      <div class="logo">😷</div>
+      <div>
+        <h1>Máscara Inteligente</h1>
+        <div class="sub">Monitoramento do sensor em tempo real</div>
+      </div>
+    </div>
+
+    <div class="status" id="status">
+      <span class="ponto"></span>
+      <span id="statusTexto">Conectando ao servidor...</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="card">
+      <div class="rotulo">Distância detectada</div>
+      <div class="distancia">
+        <span id="distancia">--</span><small> cm</small>
+      </div>
+      <div class="descricao" id="ultimaAtualizacao">
+        Aguardando a primeira medição do ESP32...
+      </div>
+
+      <div class="faixa">
+        <span class="f-vermelho"></span>
+        <span class="f-laranja"></span>
+        <span class="f-azul"></span>
+      </div>
+      <div class="faixa-legendas">
+        <span>0–14 cm</span>
+        <span>15–29 cm</span>
+        <span>30+ cm</span>
+      </div>
+    </div>
+
+    <div class="card zona">
+      <div class="rotulo">Estado dos LEDs</div>
+      <div class="circulo" id="iconeZona">●</div>
+      <h2 id="zonaTitulo">Aguardando sensor</h2>
+      <p id="zonaDescricao">Os LEDs serão atualizados conforme a distância.</p>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card metrica">
+      <div class="rotulo">Sinal Wi-Fi</div>
+      <div class="valor"><span id="wifi">--</span> <span class="unidade">dBm</span></div>
+      <div class="descricao">Intensidade do sinal do ESP32</div>
+    </div>
+
+    <div class="card metrica">
+      <div class="rotulo">Tempo ligado</div>
+      <div class="valor" id="uptime">--</div>
+      <div class="descricao">Tempo desde a inicialização</div>
+    </div>
+
+    <div class="card metrica">
+      <div class="rotulo">Identificação</div>
+      <div class="valor" id="dispositivo" style="font-size:16px">Aguardando...</div>
+      <div class="descricao">Dispositivo que enviou os dados</div>
+    </div>
+  </section>
+
+  <div class="card" style="margin-top:18px">
+    <div class="rotulo">Indicadores luminosos</div>
+    <div class="leds">
+      <span class="led r" id="ledR1"></span>
+      <span class="led r" id="ledR2"></span>
+      <span class="led o" id="ledO1"></span>
+      <span class="led o" id="ledO2"></span>
+      <span class="led b" id="ledB1"></span>
+      <span class="led b" id="ledB2"></span>
+    </div>
+    <div class="descricao" style="margin-top:15px">
+      Vermelho: menos de 15 cm · Laranja: 15 a menos de 30 cm · Azul: 30 cm ou mais.
+      Abaixo de 7 cm, todos piscam.
+    </div>
+  </div>
+
+  <footer>
+    MÁSCARA INTELIGENTE · ESP32 + HC-SR04 + MQTT<br>
+    Atualização automática · <span id="hora">Nenhuma medição recebida</span>
+  </footer>
+</main>
+
+<script>
+const TOPICO = "mascara-inteligente/seu-nome-unico/dados";
+const statusEl = document.getElementById("status");
+const statusTexto = document.getElementById("statusTexto");
+
+let ultimaMensagem = 0;
+let cliente;
+
+function definirStatus(texto, tipo) {
+  statusTexto.textContent = texto;
+  statusEl.className = "status" + (tipo ? " " + tipo : "");
+}
+
+function atualizarZona(distancia) {
+  const icone = document.getElementById("iconeZona");
+  const titulo = document.getElementById("zonaTitulo");
+  const descricao = document.getElementById("zonaDescricao");
+
+  icone.className = "circulo";
+  icone.textContent = "●";
+
+  const ids = ["ledR1", "ledR2", "ledO1", "ledO2", "ledB1", "ledB2"];
+  ids.forEach(id => document.getElementById(id).classList.remove("aceso"));
+
+  if (distancia < 7) {
+    icone.classList.add("vermelho", "alerta");
+    titulo.textContent = "Alerta próximo";
+    descricao.textContent = "Todos os seis LEDs piscam juntos.";
+    ids.forEach(id => document.getElementById(id).classList.add("aceso"));
+  } else if (distancia < 15) {
+    icone.classList.add("vermelho");
+    titulo.textContent = "Zona vermelha";
+    descricao.textContent = "Os dois LEDs vermelhos ficam acesos.";
+    ["ledR1", "ledR2"].forEach(id =>
+      document.getElementById(id).classList.add("aceso"));
+  } else if (distancia < 30) {
+    icone.classList.add("laranja");
+    titulo.textContent = "Zona laranja";
+    descricao.textContent = "Os dois LEDs laranjas ficam acesos.";
+    ["ledO1", "ledO2"].forEach(id =>
+      document.getElementById(id).classList.add("aceso"));
   } else {
-    Serial.println("MQTT desconectado");
+    icone.classList.add("azul");
+    titulo.textContent = "Zona azul";
+    descricao.textContent = "Os dois LEDs azuis ficam acesos.";
+    ["ledB1", "ledB2"].forEach(id =>
+      document.getElementById(id).classList.add("aceso"));
   }
 }
+
+function receberDados(mensagem) {
+  const d = JSON.parse(mensagem.toString());
+
+  const distancia = Number(d.distancia_cm);
+  if (!Number.isFinite(distancia) || distancia < 2 || distancia > 400) {
+    throw new Error("Distância inválida");
+  }
+
+  ultimaMensagem = Date.now();
+
+  document.getElementById("distancia").textContent = distancia;
+  document.getElementById("wifi").textContent =
+    Number.isFinite(Number(d.wifi_rssi)) ? d.wifi_rssi : "--";
+
+  const segundos = Math.max(0, Number(d.uptime_s) || 0);
+  const horas = Math.floor(segundos / 3600);
+  const minutos = Math.floor((segundos % 3600) / 60);
+  const resto = segundos % 60;
+  document.getElementById("uptime").textContent =
+    horas + "h " + minutos + "min " + resto + "s";
+
+  document.getElementById("dispositivo").textContent = d.id || "ESP32";
+  document.getElementById("hora").textContent =
+    new Date().toLocaleTimeString("pt-BR");
+  document.getElementById("ultimaAtualizacao").textContent =
+    "Última medição recebida às " +
+    new Date().toLocaleTimeString("pt-BR");
+
+  atualizarZona(distancia);
+  definirStatus("Recebendo dados ao vivo", "online");
+}
+
+function conectar() {
+  if (typeof mqtt === "undefined") {
+    definirStatus("Biblioteca MQTT não carregou", "erro");
+    return;
+  }
+
+  cliente = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", {
+    reconnectPeriod: 3000,
+    connectTimeout: 10000,
+    clientId: "painel-mascara-" +
+      Math.random().toString(16).slice(2, 10)
+  });
+
+  cliente.on("connect", () => {
+    definirStatus("Conectado · aguardando ESP32", "");
+    cliente.subscribe(TOPICO, erro => {
+      if (erro) definirStatus("Erro ao assinar tópico", "erro");
+    });
+  });
+
+  cliente.on("message", (topico, mensagem) => {
+    if (topico !== TOPICO) return;
+
+    try {
+      receberDados(mensagem);
+    } catch (erro) {
+      console.error("Mensagem MQTT inválida:", erro);
+      definirStatus("Recebemos dados inválidos", "erro");
+    }
+  });
+
+  cliente.on("reconnect", () => {
+    definirStatus("Reconectando ao servidor...", "");
+  });
+
+  cliente.on("offline", () => {
+    definirStatus("Painel desconectado", "erro");
+  });
+
+  cliente.on("error", erro => {
+    console.error("Erro MQTT:", erro);
+    definirStatus("Erro MQTT · tentando reconectar", "erro");
+  });
+}
+
+setInterval(() => {
+  if (ultimaMensagem && Date.now() - ultimaMensagem > 15000) {
+    definirStatus("Sem dados recentes do ESP32", "erro");
+  }
+}, 3000);
+
+conectar();
+</script>
+</body>
+</html>
