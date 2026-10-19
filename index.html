@@ -1,146 +1,28 @@
 
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lixeira Inteligente</title>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-<style>
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  padding: 20px;
-  font-family: Arial, sans-serif;
-  color: #f1f5f9;
-  background: #101827;
-}
-main { max-width: 850px; margin: auto; }
-header { text-align: center; padding: 20px 0; }
-h1 { margin-bottom: 8px; }
-.sub { color: #aab8ca; }
-.status, .card {
-  background: #1b293d;
-  border: 1px solid #34445a;
-  border-radius: 14px;
-  padding: 18px;
-  margin-bottom: 14px;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 14px;
-}
-.label { color: #aab8ca; font-size: 14px; }
-.value { font-size: 30px; font-weight: bold; margin-top: 12px; }
-.unit { font-size: 15px; color: #aab8ca; }
-.bar-bg {
-  margin-top: 18px;
-  height: 16px;
-  background: #334155;
-  border-radius: 20px;
-  overflow: hidden;
-}
-#bar { width: 0%; height: 100%; background: #22c55e; }
-footer { color: #aab8ca; font-size: 13px; margin-top: 20px; }
-</style>
-</head>
-<body>
-<main>
-<header>
-  <h1>♻️ Lixeira Inteligente</h1>
-  <div class="sub">Monitoramento ao vivo — ESP32</div>
-</header>
+void publicarDados() {
+  char payload[220];
 
-<div class="status" id="status">Conectando ao servidor MQTT...</div>
+  snprintf(
+    payload,
+    sizeof(payload),
+    "{\"id\":\"%s\",\"distancia_cm\":%ld,\"ocupacao_pct\":0,\"nivel\":\"%s\",\"wifi_rssi\":%d,\"uptime_s\":%lu}",
+    clientId.c_str(),
+    ultimaDistancia,
+    ultimaDistancia < 0 ? "erro" :
+      ultimaDistancia < 7 ? "alerta" :
+      ultimaDistancia < 15 ? "vermelho" :
+      ultimaDistancia < 30 ? "laranja" : "azul",
+    WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0,
+    millis() / 1000
+  );
 
-<div class="grid">
-  <section class="card">
-    <div class="label">Ocupação</div>
-    <div class="value"><span id="ocupacao">--</span><span class="unit"> %</span></div>
-    <div class="bar-bg"><div id="bar"></div></div>
-  </section>
-  <section class="card">
-    <div class="label">Distância do sensor</div>
-    <div class="value"><span id="distancia">--</span><span class="unit"> cm</span></div>
-  </section>
-  <section class="card">
-    <div class="label">Nível</div>
-    <div class="value" id="nivel">--</div>
-  </section>
-  <section class="card">
-    <div class="label">Sinal Wi-Fi do ESP32</div>
-    <div class="value"><span id="wifi">--</span><span class="unit"> dBm</span></div>
-  </section>
-</div>
+  Serial.println(payload);
 
-<footer>
-  Atualização recebida: <span id="hora">--</span>
-  <br><br>
-  Este painel mostra as medições atuais e não guarda histórico.
-</footer>
-</main>
-
-<script>
-const TOPICO = "lixeira-inteligente/seu-nome-unico/dados";
-const statusEl = document.getElementById("status");
-
-function conectar() {
-  const cliente = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", {
-    reconnectPeriod: 3000,
-    connectTimeout: 10000,
-    clientId: "painel-lixeira-" +
-      Math.random().toString(16).slice(2, 10)
-  });
-
-  cliente.on("connect", () => {
-    statusEl.textContent = "Conectado ao MQTT. Aguardando dados do ESP32...";
-    cliente.subscribe(TOPICO, (erro) => {
-      if (erro) statusEl.textContent = "Falha ao assinar o tópico MQTT.";
-    });
-  });
-
-  cliente.on("message", (topico, mensagem) => {
-    try {
-      const d = JSON.parse(mensagem.toString());
-
-      document.getElementById("distancia").textContent =
-        Number(d.distancia_cm).toFixed(1);
-      document.getElementById("ocupacao").textContent =
-        d.ocupacao_pct;
-      document.getElementById("nivel").textContent =
-        d.nivel;
-      document.getElementById("wifi").textContent =
-        d.wifi_rssi;
-
-      const pct = Math.max(0, Math.min(100, Number(d.ocupacao_pct)));
-      document.getElementById("bar").style.width = pct + "%";
-      document.getElementById("bar").style.background =
-        d.nivel === "cheia" ? "#ef4444" :
-        d.nivel === "vazia" ? "#22c55e" : "#f59e0b";
-
-      document.getElementById("hora").textContent =
-        new Date().toLocaleTimeString("pt-BR");
-      statusEl.textContent = "Recebendo medições ao vivo do ESP32.";
-    } catch (e) {
-      statusEl.textContent = "Recebido dado inválido.";
+  if (mqtt.connected()) {
+    if (!mqtt.publish(topicoDados.c_str(), payload)) {
+      Serial.println("Falha ao publicar dados MQTT");
     }
-  });
-
-  cliente.on("error", () => {
-    statusEl.textContent = "Erro na conexão MQTT. Tentando reconectar...";
-  });
-
-  cliente.on("offline", () => {
-    statusEl.textContent = "Painel offline. Tentando reconectar...";
-  });
+  } else {
+    Serial.println("MQTT desconectado");
+  }
 }
-
-if (typeof mqtt === "undefined") {
-  statusEl.textContent = "Não foi possível carregar a biblioteca MQTT.";
-} else {
-  conectar();
-}
-</script>
-</body>
-</html>
